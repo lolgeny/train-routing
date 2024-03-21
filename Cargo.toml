@@ -3,8 +3,15 @@ name = "train-routing"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+itertools = "0.12.1"
+toml = "0.8.11"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
-ndarray = "0.15.6"
-serde = "1.0.197"
+[dependencies.ndarray]
+version = "0.15.6"
+features = ["serde-1"]
+
+[dependencies.serde]
+version = "1.0.197"
+features = ["derive"]
