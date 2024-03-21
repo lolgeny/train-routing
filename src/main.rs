@@ -4,7 +4,7 @@ use ndarray::{array, IxDyn};
 use parse::{parse_problem, save_problem};
 use problem::{Problem, ProblemDescription};
 
-use crate::{evaluate::evaluate, problem::ScheduleType};
+use crate::{baseline::big_loop, evaluate::evaluate, problem::ScheduleType};
 
 mod baseline;
 mod evaluate;
@@ -42,9 +42,9 @@ fn save_example_problem() {
 
 
 fn main() {
-    save_example_problem();
     let problem = parse_problem("test_problem.toml");
     dbg!(&problem);
-    let score = evaluate(&problem, &[vec![0, 1, 2]], &[ScheduleType::Circular]);
-    println!("{score}");
+    let solution = big_loop(&problem, ScheduleType::Bidirectional);
+    dbg!(&solution);
+    println!("{}", solution.check_feasibility(&problem));
 }

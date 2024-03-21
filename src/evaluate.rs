@@ -160,5 +160,5 @@ pub fn evaluate(
         }
     }
     // Elementwise multiply with frequencies to get an overall score
-    (dbg!(station_travel_times) * &problem.description.travel_frequencies).sum()
+    (dbg!(station_travel_times) * &problem.description.travel_frequencies).sum() / 2.0
 }

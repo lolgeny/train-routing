@@ -60,3 +60,15 @@ pub struct Solution {
     /// where lower is better
     pub obj_value: f64
 }
+impl Solution {
+    /// Ensures a solution is feasible by checking it both logically consistent and within budget
+    pub fn check_feasibility(&self, problem: &Problem) -> bool {
+        let cost = 
+            (self.built_tracks.map(|&x| if x {1.0} else {0.0}) * &problem.description.track_costs).sum() / 2.0
+            + self.n_trains as f64 * problem.description.train_price;
+        
+        self.n_trains == self.train_routes.len()
+            && self.n_trains == self.train_types.len()
+            && cost <= problem.description.total_budget
+    }
+}
