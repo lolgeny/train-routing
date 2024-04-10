@@ -8,6 +8,7 @@ use crate::{baseline::big_loop, evaluate::evaluate, problem::ScheduleType};
 
 mod baseline;
 mod evaluate;
+mod localsearch;
 mod parse;
 mod problem;
 
