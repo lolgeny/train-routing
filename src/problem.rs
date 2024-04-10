@@ -45,30 +45,35 @@ pub enum ScheduleType {
     Circular, Bidirectional
 }
 
+/// A train line: its schedule, with how many trains it runs
+#[derive(Debug, Clone)]
+pub struct TrainLine {
+    /// A list of stations which trains on this line visit
+    pub route: Vec<usize>,
+    /// How the train follows this route
+    pub ty: ScheduleType,
+    /// The number of trains that use this line
+    pub n: usize
+}
+
 /// The solver's optimal solution to the problem
 #[derive(Debug, Clone)]
 pub struct Solution {
-    /// The number of trains/lines to build
-    pub n_trains: usize,
     /// A symmetric matrix showing which tracks are built
     pub built_tracks: ArrayD<bool>,
-    /// A list of routes for trains to follow
-    pub train_routes: Vec<Vec<usize>>,
-    /// A list of schedule types that trains follow
-    pub train_types: Vec<ScheduleType>,
+    /// A list of train lines descriptions
+    pub train_lines: Vec<TrainLine>,
     /// The objective value, representing how good the solution is,
     /// where lower is better
     pub obj_value: f64
 }
 impl Solution {
-    /// Ensures a solution is feasible by checking it both logically consistent and within budget
+    /// Ensures a solution is feasible by checking it is within budget
     pub fn check_feasibility(&self, problem: &Problem) -> bool {
         let cost = 
             (self.built_tracks.map(|&x| if x {1.0} else {0.0}) * &problem.description.track_costs).sum() / 2.0
-            + self.n_trains as f64 * problem.description.train_price;
+            + self.train_lines.iter().map(|t| t.n).sum::<usize>() as f64 * problem.description.train_price;
         
-        self.n_trains == self.train_routes.len()
-            && self.n_trains == self.train_types.len()
-            && cost <= problem.description.total_budget
+        cost <= problem.description.total_budget
     }
 }
