@@ -73,12 +73,13 @@ pub struct Solution {
     pub obj_value: f64
 }
 impl Solution {
+    /// Calculate the cost of a solution
+    pub fn cost(&self, problem: &Problem) -> f64 {
+        (self.built_tracks.map(|&x| if x {1.0} else {0.0}) * &problem.description.track_costs).sum() / 2.0
+        + self.train_lines.iter().map(|t| t.n).sum::<usize>() as f64 * problem.description.train_price
+    }
     /// Ensures a solution is feasible by checking it is within budget
     pub fn check_feasibility(&self, problem: &Problem) -> bool {
-        let cost = 
-            (self.built_tracks.map(|&x| if x {1.0} else {0.0}) * &problem.description.track_costs).sum() / 2.0
-            + self.train_lines.iter().map(|t| t.n).sum::<usize>() as f64 * problem.description.train_price;
-        
-        cost <= problem.description.total_budget
+        self.cost(problem) <= problem.description.total_budget
     }
 }

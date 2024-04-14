@@ -5,7 +5,7 @@ use std::collections::BinaryHeap;
 use itertools::Itertools;
 use ndarray::ArrayD;
 
-use crate::problem::{Problem, ProblemDescription, ScheduleType, TrainLine};
+use crate::problem::{Problem, ScheduleType, TrainLine};
 use ScheduleType::*;
 
 
@@ -159,5 +159,5 @@ pub fn evaluate(
         }
     }
     // Elementwise multiply with frequencies to get an overall score
-    (dbg!(station_travel_times) * &problem.description.travel_frequencies).sum() / 2.0
+    (station_travel_times * &problem.description.travel_frequencies).sum() / 2.0
 }

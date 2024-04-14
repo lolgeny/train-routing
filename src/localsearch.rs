@@ -6,7 +6,7 @@ use std::{collections::VecDeque, vec};
 use itertools::Itertools;
 use ndarray::ArrayD;
 
-use crate::{evaluate::evaluate, problem::{Problem, ScheduleType, Solution, TrainLine}};
+use crate::{baseline, evaluate::evaluate, problem::{Problem, ScheduleType, Solution, TrainLine}};
 
 /// Helper iterator to visit all tracks on a single train line
 struct TrainTrackIterator<'a> {
@@ -23,7 +23,7 @@ impl<'a> Iterator for TrainTrackIterator<'a> {
     type Item = (usize, usize); // represents two stations
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.i == self.train_line.route.len() + match self.train_line.ty {
+        if self.i == self.train_line.route.len() - 1 + match self.train_line.ty {
             ScheduleType::Bidirectional => 0,
             ScheduleType::Circular => 1
         } {
@@ -48,7 +48,14 @@ struct WorkingSolution {
 impl WorkingSolution {
     /// An empty, basic feasible solution
     fn new(problem: &Problem) -> Self {
-        Self { train_lines: vec![TrainLine::default()], cost: 0.0, built_tracks: ArrayD::from_elem(problem.description.track_costs.shape(), false) }
+        // Self { train_lines: vec![TrainLine::default()], cost: 0.0, built_tracks: ArrayD::from_elem(problem.description.track_costs.shape(), false) }
+        let base = baseline::big_loop(problem, ScheduleType::Bidirectional);
+        let cost = base.cost(problem);
+        Self {
+            train_lines: base.train_lines,
+            cost,
+            built_tracks: base.built_tracks
+        }
     }
 }   
 impl WorkingSolution {
@@ -127,7 +134,7 @@ impl WorkingSolution {
                     connections.push((0, cloned_lines[i].route.len()-1));
                 }
                 for (ai, bi) in connections {
-                    let a = cloned_lines[i].route[i];
+                    let a = cloned_lines[i].route[ai];
                     let b = cloned_lines[i].route[bi];
                     if cloned_built_tracks[[a, b]] {continue};
                     cloned_built_tracks[[a, b]] = true;
@@ -160,10 +167,10 @@ impl WorkingSolution {
                 if (index == 0 || index == cloned_lines[i].route.len()-1) && cloned_lines[i].ty == ScheduleType::Circular {
                     connections.push((0, cloned_lines[i].route.len()-1));
                 }
-                cloned_lines.remove(index);
+                cloned_lines[i].route.remove(index);
                 let mut cost_saved = 0.0;
                 'connections: for (ai, bi) in connections {
-                    let a = self.train_lines[i].route[i];
+                    let a = self.train_lines[i].route[ai];
                     let b = self.train_lines[i].route[bi];
                     for l in &cloned_lines {
                         for (c, d) in TrainTrackIterator::new(l) {
@@ -180,6 +187,7 @@ impl WorkingSolution {
         
         // Increase/decrease number of trains on a line
         for i in 0..self.train_lines.len() {
+            if fastrand::f64() > solver.neighbour_chance {continue};
             let mut cloned_lines1 = self.train_lines.clone();
             cloned_lines1[i].n += 1;
             neighbours.push(Self { train_lines: cloned_lines1, cost: self.cost + solver.problem.description.train_price, built_tracks: self.built_tracks.clone() });
@@ -188,6 +196,42 @@ impl WorkingSolution {
                 cloned_lines2[i].n -= 1;
                 neighbours.push(Self { train_lines: cloned_lines2, cost: self.cost - solver.problem.description.train_price, built_tracks: self.built_tracks.clone() });
             }
+        }
+
+        // Change the type of a line
+        for i in 0..self.train_lines.len() {
+            if fastrand::f64() > solver.neighbour_chance {continue};
+            let mut cloned_lines = self.train_lines.clone();
+            let mut cloned_built_tracks = self.built_tracks.clone();
+            let mut cost_change = 0.0;
+            let a = cloned_lines[i].route[0];
+            let b = *cloned_lines[i].route.last().unwrap();
+            match cloned_lines[i].ty {
+                ScheduleType::Bidirectional => {
+                    cloned_lines[i].ty = ScheduleType::Circular;
+                    if !cloned_built_tracks[[a, b]] {
+                        cloned_built_tracks[[a, b]] = true;
+                        cloned_built_tracks[[b, a]] = true;
+                        cost_change = solver.problem.description.track_costs[[a, b]];
+                    }
+                }
+                ScheduleType::Circular => {
+                    cloned_lines[i].ty = ScheduleType::Bidirectional;
+                    // Find if this track is still necessary
+                    let mut found = false;
+                    'search: for l in &cloned_lines {
+                        for (c, d) in TrainTrackIterator::new(l) {
+                            if (c == a && d == b) || (c == b && d == a) {found = true; break 'search;}
+                        }
+                    }
+                    if !found {
+                        cloned_built_tracks[[a, b]] = false;
+                        cloned_built_tracks[[b, a]] = false;
+                        cost_change = -solver.problem.description.track_costs[[a, b]];
+                    }
+                }
+            }
+            neighbours.push(Self { train_lines: cloned_lines, cost: self.cost + cost_change, built_tracks: cloned_built_tracks });
         }
         neighbours
     }
@@ -213,28 +257,30 @@ impl<'a> Solver<'a> {
     /// Solve the problem
     pub fn solve(&self) -> Solution {
         // Construct a basic feasible solution
-        let mut solution = WorkingSolution::new(&self.problem);
+        let mut solution = WorkingSolution::new(self.problem);
         let mut best_solution = solution.clone();
         let mut best_score = solution.evaluate(self);
         let mut tabu = VecDeque::with_capacity(self.tabu_size);
         for _ in 0..self.max_iterations {
             // Consider possible neighbours to this solution
             let neighbours = solution.generate_neighbours(self);
-            let allowed_neighbours = neighbours.into_iter().filter(|n| !tabu.contains(n)).collect_vec();
-            if allowed_neighbours.len() == 0 {continue}; // neighbour_chance is likely too low, or tabu too full
+            let allowed_neighbours = neighbours.into_iter().filter(|n| !tabu.contains(&n.train_lines)).collect_vec();
+            if allowed_neighbours.is_empty() {continue}; // neighbour_chance is likely too low, or tabu too full
             // UNWRAP: above statement ensures this never panics
-            let (i, neighbour, score) = allowed_neighbours.into_iter().enumerate().map(|(i, n)| (i, n, n.evaluate(self)))
+            let (_, neighbour, score) = allowed_neighbours.into_iter().enumerate().map(|(i, n)| {
+                let score = n.evaluate(self);
+                (i, n, score)
+            })
                 .min_by(|(_, _, score1), (_, _, score2)| score1.total_cmp(score2)).unwrap();
             // Update current solution + tabu
             solution = neighbour;
             if score < best_score {
                 best_solution = solution.clone();
+                best_score = score;
             }
             if tabu.len() >= self.tabu_size {tabu.pop_front();}
-            tabu.push_back(solution.clone());
+            tabu.push_back(solution.train_lines.clone());
         }
-        Solution {
-            n_trains: best_solution.train_routes.len(), built_tracks: (), train_routes: (), train_types: (), obj_value: () 
-        }
+        Solution { built_tracks: best_solution.built_tracks, train_lines: best_solution.train_lines, obj_value: best_score }
     }
 }
