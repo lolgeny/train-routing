@@ -46,7 +46,7 @@ pub enum ScheduleType {
 }
 
 /// A train line: its schedule, with how many trains it runs
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TrainLine {
     /// A list of stations which trains on this line visit
     pub route: Vec<usize>,
@@ -55,9 +55,14 @@ pub struct TrainLine {
     /// The number of trains that use this line
     pub n: usize
 }
+impl Default for TrainLine {
+    fn default() -> Self {
+        Self { route: vec![], ty: ScheduleType::Circular, n: 1 }
+    }
+}
 
 /// The solver's optimal solution to the problem
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Solution {
     /// A symmetric matrix showing which tracks are built
     pub built_tracks: ArrayD<bool>,
