@@ -46,7 +46,7 @@ pub enum ScheduleType {
 }
 
 /// A train line: its schedule, with how many trains it runs
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TrainLine {
     /// A list of stations which trains on this line visit
     pub route: Vec<usize>,

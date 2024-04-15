@@ -65,7 +65,7 @@ fn main() {
     dbg!(&solution);
     println!("{}", solution.check_feasibility(&problem));
 
-    let solver = localsearch::Solver { problem: &problem, max_iterations: 10_000, neighbour_chance: 1.0, initial_tabu_size: 2000 };
+    let solver = localsearch::Solver { problem: &problem, max_iterations: 10_000, neighbour_chance: 1.0, tabu_initial_timeout: 500 };
     let solution2 = solver.solve();
     dbg!(&solution2);
 }

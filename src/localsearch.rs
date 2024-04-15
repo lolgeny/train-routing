@@ -1,7 +1,7 @@
 //! Implements a local search based algorithm for optimising a train routine.
 //! It uses the ant colony optimisation meaheuristic
 
-use std::{collections::VecDeque, vec};
+use std::{collections::HashMap, vec};
 
 use itertools::Itertools;
 use ndarray::ArrayD;
@@ -249,9 +249,8 @@ pub struct Solver<'a> {
     pub max_iterations: usize,
     /// The probability a neighbour is constructed
     pub neighbour_chance: f64,
-    /// The size of the tabu - larger may lead to higher quality solutions
-    /// but use up more memory
-    pub initial_tabu_size: usize
+    /// The time before tabu times out
+    pub tabu_initial_timeout: usize
 }
 impl<'a> Solver<'a> {
     /// Solve the problem
@@ -260,14 +259,15 @@ impl<'a> Solver<'a> {
         let mut solution = WorkingSolution::new(self.problem);
         let mut best_solution = solution.clone();
         let mut best_score = solution.evaluate(self);
-        let mut tabu = VecDeque::with_capacity(self.initial_tabu_size);
-        let mut tabu_size = self.initial_tabu_size;
+        let mut tabu = HashMap::new();
+        let mut tabu_timeout = self.tabu_initial_timeout;
         let mut current_score = best_score;
+        let mut time = 0;
         for _ in 0..self.max_iterations {
             // Consider possible neighbours to this solution
             let neighbours = solution.generate_neighbours(self);
             let allowed_neighbours = neighbours.into_iter().filter(
-                |n| !tabu.contains(&n.train_lines) && n.cost <= self.problem.description.total_budget
+                |n| !tabu.contains_key(&n.train_lines) && n.cost <= self.problem.description.total_budget
             ).collect_vec();
             if allowed_neighbours.is_empty() {continue}; // neighbour_chance is likely too low, or tabu too full
             // UNWRAP: above statement ensures this never panics
@@ -283,14 +283,15 @@ impl<'a> Solver<'a> {
                 best_solution = solution.clone();
                 best_score = score;
             }
-            if current_score < score && tabu_size > 10 { // decrease tabu: selected neighbour is worse
-                tabu_size -= 5;
-            } else if current_score > score {
-                tabu_size += 5;
+            if current_score < score && tabu_timeout > 5 { // decrease tabu: selected neighbour is worse
+                tabu_timeout -= 5;
+            } else if current_score > score { // increase tabu: getting better
+                tabu_timeout += 5;
             }
             current_score = score;
-            while tabu.len() >= tabu_size {tabu.pop_front();}
-            tabu.push_back(solution.train_lines.clone());
+            tabu.retain(|_, v| *v + tabu_timeout >= time);
+            tabu.insert(solution.train_lines.clone(), time);
+            time += 1;
         }
         Solution { built_tracks: best_solution.built_tracks, train_lines: best_solution.train_lines, obj_value: best_score }
     }
