@@ -251,7 +251,7 @@ pub struct Solver<'a> {
     pub neighbour_chance: f64,
     /// The size of the tabu - larger may lead to higher quality solutions
     /// but use up more memory
-    pub tabu_size: usize
+    pub initial_tabu_size: usize
 }
 impl<'a> Solver<'a> {
     /// Solve the problem
@@ -260,11 +260,15 @@ impl<'a> Solver<'a> {
         let mut solution = WorkingSolution::new(self.problem);
         let mut best_solution = solution.clone();
         let mut best_score = solution.evaluate(self);
-        let mut tabu = VecDeque::with_capacity(self.tabu_size);
+        let mut tabu = VecDeque::with_capacity(self.initial_tabu_size);
+        let mut tabu_size = self.initial_tabu_size;
+        let mut current_score = best_score;
         for _ in 0..self.max_iterations {
             // Consider possible neighbours to this solution
             let neighbours = solution.generate_neighbours(self);
-            let allowed_neighbours = neighbours.into_iter().filter(|n| !tabu.contains(&n.train_lines)).collect_vec();
+            let allowed_neighbours = neighbours.into_iter().filter(
+                |n| !tabu.contains(&n.train_lines) && n.cost <= self.problem.description.total_budget
+            ).collect_vec();
             if allowed_neighbours.is_empty() {continue}; // neighbour_chance is likely too low, or tabu too full
             // UNWRAP: above statement ensures this never panics
             let (_, neighbour, score) = allowed_neighbours.into_iter().enumerate().map(|(i, n)| {
@@ -274,11 +278,18 @@ impl<'a> Solver<'a> {
                 .min_by(|(_, _, score1), (_, _, score2)| score1.total_cmp(score2)).unwrap();
             // Update current solution + tabu
             solution = neighbour;
+            // print!(": {}; ", score);
             if score < best_score {
                 best_solution = solution.clone();
                 best_score = score;
             }
-            if tabu.len() >= self.tabu_size {tabu.pop_front();}
+            if current_score < score && tabu_size > 10 { // decrease tabu: selected neighbour is worse
+                tabu_size -= 5;
+            } else if current_score > score {
+                tabu_size += 5;
+            }
+            current_score = score;
+            while tabu.len() >= tabu_size {tabu.pop_front();}
             tabu.push_back(solution.train_lines.clone());
         }
         Solution { built_tracks: best_solution.built_tracks, train_lines: best_solution.train_lines, obj_value: best_score }
