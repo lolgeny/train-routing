@@ -302,10 +302,10 @@ impl<'a> Solver<'a> {
                 best_score = score;
             }
             if current_score <= score { // decrease tabu: selected neighbour is worse
-                if tabu_timeout > 5 && current_score < score {tabu_timeout -= 5;}
+                if tabu_timeout > 10 && current_score < score {tabu_timeout -= 10;}
                 stale_time += 1;
             } else { // increase tabu: getting better
-                tabu_timeout += 5;
+                tabu_timeout += 10;
                 stale_time = 0;
             }
             current_score = score;
