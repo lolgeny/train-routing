@@ -1,6 +1,6 @@
 n = 20
-train_price = 1.0
-total_budget = 100.0
+train_price = 10.0
+total_budget = 50.0
 
 [track_costs]
 v = 1

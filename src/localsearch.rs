@@ -59,9 +59,26 @@ impl WorkingSolution {
     }
 }   
 impl WorkingSolution {
-    /// Helper function to evaluate cost
+    /// Helper function to evaluate objective
     fn evaluate(&self, solver: &Solver<'_>) -> f64 {
         evaluate(solver.problem, &self.train_lines)
+    }
+    /// Helper funcction to check cost
+    fn calc_cost(&self, solver: &Solver<'_>) -> f64 {
+        let mut cost = self.train_lines.iter().map(|l| l.n as f64).sum::<f64>() * solver.problem.description.train_price;
+        for i in 0..solver.problem.description.n {
+            'tracks: for j in 0..solver.problem.description.n {
+                for l in &self.train_lines {
+                    for (a, b) in TrainTrackIterator::new(l) {
+                        if (i == a && j == b) || (i == b && j == a) {
+                            cost += solver.problem.description.track_costs[[i, j]];
+                            continue 'tracks;
+                        }
+                    }
+                }
+            }
+        }
+        cost
     }
     /// Explore neighbours to this solution, by possible allowed moves
     fn generate_neighbours(&self, solver: &Solver<'_>) -> Vec<WorkingSolution> {
@@ -263,11 +280,13 @@ impl<'a> Solver<'a> {
         let mut tabu_timeout = self.tabu_initial_timeout;
         let mut current_score = best_score;
         let mut time = 0;
+        let mut stale_time = 0;
+        let mut good_solutions: Vec<WorkingSolution> = vec![];
         for _ in 0..self.max_iterations {
             // Consider possible neighbours to this solution
             let neighbours = solution.generate_neighbours(self);
             let allowed_neighbours = neighbours.into_iter().filter(
-                |n| !tabu.contains_key(&n.train_lines) && n.cost <= self.problem.description.total_budget
+                |n| !tabu.contains_key(&n.train_lines) && n.calc_cost(&self) <= self.problem.description.total_budget
             ).collect_vec();
             if allowed_neighbours.is_empty() {continue}; // neighbour_chance is likely too low, or tabu too full
             // UNWRAP: above statement ensures this never panics
@@ -278,17 +297,26 @@ impl<'a> Solver<'a> {
                 .min_by(|(_, _, score1), (_, _, score2)| score1.total_cmp(score2)).unwrap();
             // Update current solution + tabu
             solution = neighbour;
-            // print!(": {}; ", score);
             if score < best_score {
                 best_solution = solution.clone();
                 best_score = score;
             }
-            if current_score < score && tabu_timeout > 5 { // decrease tabu: selected neighbour is worse
-                tabu_timeout -= 5;
-            } else if current_score > score { // increase tabu: getting better
+            if current_score <= score { // decrease tabu: selected neighbour is worse
+                if tabu_timeout > 5 && current_score < score {tabu_timeout -= 5;}
+                stale_time += 1;
+            } else { // increase tabu: getting better
                 tabu_timeout += 5;
+                stale_time = 0;
             }
             current_score = score;
+            if stale_time > 20 && !good_solutions.is_empty() { // intensification
+                solution = fastrand::choice(&good_solutions).unwrap().clone(); // UNWRAP: never unwraps since we've checked good solutions
+                current_score = solution.evaluate(&self);
+                stale_time = 0;
+            }
+            if time % 100 == 0 && !good_solutions.contains(&best_solution) {
+                good_solutions.push(best_solution.clone());
+            }
             tabu.retain(|_, v| *v + tabu_timeout >= time);
             tabu.insert(solution.train_lines.clone(), time);
             time += 1;
