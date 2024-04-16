@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// A description of a general train route problem
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ProblemDescription {
+pub struct Problem {
     /// The number of stations
     pub n: usize,
     /// A symmetric matrix representing the cost to build tracks between two stations
@@ -19,20 +19,6 @@ pub struct ProblemDescription {
     pub train_price: f64,
     /// The total amount of money that can be allocated
     pub total_budget: f64
-}
-
-/// A train routing problem, with its description and cached information
-#[derive(Debug, Clone)]
-pub struct Problem {
-    pub description: ProblemDescription
-}
-impl Problem {
-    /// Create a new problem from its descriptionI
-    pub fn new(description: ProblemDescription) -> Self {
-        Self {
-            description
-        }
-    }
 }
 
 /// Represents which type of line a train follows:
@@ -75,11 +61,11 @@ pub struct Solution {
 impl Solution {
     /// Calculate the cost of a solution
     pub fn cost(&self, problem: &Problem) -> f64 {
-        (self.built_tracks.map(|&x| if x {1.0} else {0.0}) * &problem.description.track_costs).sum() / 2.0
-        + self.train_lines.iter().map(|t| t.n).sum::<usize>() as f64 * problem.description.train_price
+        (self.built_tracks.map(|&x| if x {1.0} else {0.0}) * &problem.track_costs).sum() / 2.0
+        + self.train_lines.iter().map(|t| t.n).sum::<usize>() as f64 * problem.train_price
     }
     /// Ensures a solution is feasible by checking it is within budget
     pub fn check_feasibility(&self, problem: &Problem) -> bool {
-        self.cost(problem) <= problem.description.total_budget
+        self.cost(problem) <= problem.total_budget
     }
 }

@@ -48,7 +48,7 @@ struct WorkingSolution {
 impl WorkingSolution {
     /// An empty, basic feasible solution
     fn new(problem: &Problem) -> Self {
-        // Self { train_lines: vec![TrainLine::default()], cost: 0.0, built_tracks: ArrayD::from_elem(problem.description.track_costs.shape(), false) }
+        // Self { train_lines: vec![TrainLine::default()], cost: 0.0, built_tracks: ArrayD::from_elem(problem.track_costs.shape(), false) }
         let base = baseline::big_loop(problem, ScheduleType::Bidirectional);
         let cost = base.cost(problem);
         Self {
@@ -65,13 +65,13 @@ impl WorkingSolution {
     }
     /// Helper funcction to check cost
     fn calc_cost(&self, solver: &Solver<'_>) -> f64 {
-        let mut cost = self.train_lines.iter().map(|l| l.n as f64).sum::<f64>() * solver.problem.description.train_price;
-        for i in 0..solver.problem.description.n {
-            'tracks: for j in 0..solver.problem.description.n {
+        let mut cost = self.train_lines.iter().map(|l| l.n as f64).sum::<f64>() * solver.problem.train_price;
+        for i in 0..solver.problem.n {
+            'tracks: for j in 0..solver.problem.n {
                 for l in &self.train_lines {
                     for (a, b) in TrainTrackIterator::new(l) {
                         if (i == a && j == b) || (i == b && j == a) {
-                            cost += solver.problem.description.track_costs[[i, j]];
+                            cost += solver.problem.track_costs[[i, j]];
                             continue 'tracks;
                         }
                     }
@@ -91,7 +91,7 @@ impl WorkingSolution {
             cloned_lines.push(self.train_lines[i].clone());
             neighbours.push(Self {
                 // The only new cost is building additional trains, since tracks are already built
-                cost: self.cost + self.train_lines[i].n as f64 * solver.problem.description.train_price,
+                cost: self.cost + self.train_lines[i].n as f64 * solver.problem.train_price,
                 built_tracks: self.built_tracks.clone(),
                 train_lines: cloned_lines,
             });
@@ -104,10 +104,10 @@ impl WorkingSolution {
                 let mut cloned_lines = self.train_lines.clone();
                 let removed_line = cloned_lines.swap_remove(i);
                 let mut cloned_build_tracks = self.built_tracks.clone();
-                let mut cost_saved = removed_line.n as f64 * solver.problem.description.train_price;
+                let mut cost_saved = removed_line.n as f64 * solver.problem.train_price;
                 // Iterate through all tracks and find if any are unnecessary now
-                for i in 0..solver.problem.description.n {
-                    'tracks: for j in 0..solver.problem.description.n {
+                for i in 0..solver.problem.n {
+                    'tracks: for j in 0..solver.problem.n {
                         if !cloned_build_tracks[[i, j]] {continue};
                         for l in &cloned_lines {
                             for (a, b) in TrainTrackIterator::new(l) {
@@ -115,7 +115,7 @@ impl WorkingSolution {
                             }
                         }
                         // If the code reaches here, the track is no longer necessary
-                        cost_saved += solver.problem.description.track_costs[[i, j]];
+                        cost_saved += solver.problem.track_costs[[i, j]];
                         cloned_build_tracks[[i, j]] = false;
                         cloned_build_tracks[[j, i]] = false;
                     }
@@ -131,7 +131,7 @@ impl WorkingSolution {
 
         // Add a stop to a line
         for i in 0..self.train_lines.len() {
-            let available_stations = (0..solver.problem.description.n).filter(|x| !self.train_lines[i].route.contains(x)).collect_vec();
+            let available_stations = (0..solver.problem.n).filter(|x| !self.train_lines[i].route.contains(x)).collect_vec();
             for s in available_stations {
                 if fastrand::f64() > solver.neighbour_chance {continue};
                 let mut cloned_lines = self.train_lines.clone();
@@ -156,7 +156,7 @@ impl WorkingSolution {
                     if cloned_built_tracks[[a, b]] {continue};
                     cloned_built_tracks[[a, b]] = true;
                     cloned_built_tracks[[b, a]] = true;
-                    additional_cost += solver.problem.description.track_costs[[a, b]];
+                    additional_cost += solver.problem.track_costs[[a, b]];
                 }
                 neighbours.push(Self {
                     cost: additional_cost, built_tracks: cloned_built_tracks,
@@ -196,7 +196,7 @@ impl WorkingSolution {
                     }
                     cloned_built_tracks[[a, b]] = false;
                     cloned_built_tracks[[b, a]] = false;
-                    cost_saved += solver.problem.description.track_costs[[a, b]];
+                    cost_saved += solver.problem.track_costs[[a, b]];
                 }
                 neighbours.push(Self {train_lines: cloned_lines, cost: self.cost-cost_saved, built_tracks: cloned_built_tracks});
             }
@@ -207,11 +207,11 @@ impl WorkingSolution {
             if fastrand::f64() > solver.neighbour_chance {continue};
             let mut cloned_lines1 = self.train_lines.clone();
             cloned_lines1[i].n += 1;
-            neighbours.push(Self { train_lines: cloned_lines1, cost: self.cost + solver.problem.description.train_price, built_tracks: self.built_tracks.clone() });
+            neighbours.push(Self { train_lines: cloned_lines1, cost: self.cost + solver.problem.train_price, built_tracks: self.built_tracks.clone() });
             if self.train_lines[i].n > 1 { // only subtract if the line is still running - don't leave a ghost line
                 let mut cloned_lines2 = self.train_lines.clone();
                 cloned_lines2[i].n -= 1;
-                neighbours.push(Self { train_lines: cloned_lines2, cost: self.cost - solver.problem.description.train_price, built_tracks: self.built_tracks.clone() });
+                neighbours.push(Self { train_lines: cloned_lines2, cost: self.cost - solver.problem.train_price, built_tracks: self.built_tracks.clone() });
             }
         }
 
@@ -229,7 +229,7 @@ impl WorkingSolution {
                     if !cloned_built_tracks[[a, b]] {
                         cloned_built_tracks[[a, b]] = true;
                         cloned_built_tracks[[b, a]] = true;
-                        cost_change = solver.problem.description.track_costs[[a, b]];
+                        cost_change = solver.problem.track_costs[[a, b]];
                     }
                 }
                 ScheduleType::Circular => {
@@ -244,7 +244,7 @@ impl WorkingSolution {
                     if !found {
                         cloned_built_tracks[[a, b]] = false;
                         cloned_built_tracks[[b, a]] = false;
-                        cost_change = -solver.problem.description.track_costs[[a, b]];
+                        cost_change = -solver.problem.track_costs[[a, b]];
                     }
                 }
             }
@@ -286,7 +286,7 @@ impl<'a> Solver<'a> {
             // Consider possible neighbours to this solution
             let neighbours = solution.generate_neighbours(self);
             let allowed_neighbours = neighbours.into_iter().filter(
-                |n| !tabu.contains_key(&n.train_lines) && n.calc_cost(&self) <= self.problem.description.total_budget
+                |n| !tabu.contains_key(&n.train_lines) && n.calc_cost(&self) <= self.problem.total_budget
             ).collect_vec();
             if allowed_neighbours.is_empty() {continue}; // neighbour_chance is likely too low, or tabu too full
             // UNWRAP: above statement ensures this never panics

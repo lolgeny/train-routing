@@ -2,7 +2,7 @@
 
 use ndarray::{array, ArrayD, IxDyn};
 use parse::{parse_problem, save_problem};
-use problem::{Problem, ProblemDescription};
+use problem::Problem;
 
 use crate::{baseline::big_loop, problem::ScheduleType};
 
@@ -17,7 +17,7 @@ mod problem;
 /// problem to a file.
 #[allow(unused)]
 fn save_example_problem() {
-    let problem_desc = ProblemDescription {
+    let problem = Problem {
         n: 3,
         track_costs: array![
             [0.0, 1.0, 2.0],
@@ -37,7 +37,6 @@ fn save_example_problem() {
         train_price: 10.0,
         total_budget: 1000.0,
     };
-    let problem = Problem::new(problem_desc);
     save_problem("test_problem.toml", &problem);
 }
 
@@ -47,17 +46,17 @@ fn rand_mat(n: usize) -> ArrayD<f64> {
 }
 
 #[allow(unused)]
-fn gen_random_problem(n: usize, train_price: f64, total_budget: f64) -> ProblemDescription {
+fn gen_random_problem(n: usize, train_price: f64, total_budget: f64) -> Problem {
     let track_costs = rand_mat(n);
     let track_times = rand_mat(n);
     let travel_frequencies = rand_mat(n);
-    ProblemDescription { n, track_costs, track_times, travel_frequencies, train_price, total_budget }
+    Problem { n, track_costs, track_times, travel_frequencies, train_price, total_budget }
 }
 
 fn main() {
     // let problem = parse_problem("test_problem.toml");
-    // let problem = Problem::new(gen_random_problem(20, 1.0, 100.0));
-    // save_problem("medium_random_problem.toml", &problem);
+    // let problem = gen_random_problem(100, 1.0, 100.0);
+    // save_problem("large_random_problem.toml", &problem);
     let problem = parse_problem("medium_random_problem.toml");
     // dbg!(&problem);
 
@@ -65,7 +64,7 @@ fn main() {
     dbg!(&solution);
     println!("{}", solution.check_feasibility(&problem));
 
-    let solver = localsearch::Solver { problem: &problem, max_iterations: 100_000, neighbour_chance: 1.0, tabu_initial_timeout: 10_000 };
+    let solver = localsearch::Solver { problem: &problem, max_iterations: 10_000, neighbour_chance: 0.7, tabu_initial_timeout: 10_000 };
     let solution2 = solver.solve();
     dbg!(&solution2);
 }

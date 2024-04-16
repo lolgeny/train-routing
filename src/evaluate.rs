@@ -44,7 +44,8 @@ impl PartialEq for QueueNode {
 }
 impl Eq for QueueNode {}
 impl PartialOrd for QueueNode {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self)
+        -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
 }
 impl Ord for QueueNode {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -64,24 +65,24 @@ pub fn evaluate(
     // Create a list of E(X_i) where X_i is the time it takes to wait for train i to reach a commuter
     // This is half the total distance of a cycle over the number of trains on the line
     let train_delays = train_lines.iter().map(|line| {
-        let mut total_time: f64 = (0..line.route.len()-1).map(|i| problem.description.track_times[[line.route[i], line.route[i+1]]]).sum();
+        let mut total_time: f64 = (0..line.route.len()-1).map(|i| problem.track_times[[line.route[i], line.route[i+1]]]).sum();
         if line.ty == Circular { // Must also travel to beginning
-            total_time += problem.description.track_times[[line.route[0], line.route[line.route.len()-1]]];
+            total_time += problem.track_times[[line.route[0], line.route[line.route.len()-1]]];
         }
         total_time / (2.0 * line.n as f64)
     }).collect_vec();
 
-    let mut station_travel_times = ArrayD::<f64>::ones(problem.description.travel_frequencies.shape()) * 1e10; // TODO: something more robust
+    let mut station_travel_times = ArrayD::<f64>::ones(problem.travel_frequencies.shape()) * 1e10; // TODO: something more robust
 
     // Iterate over every starting position
-    for station in 0..problem.description.n {
+    for station in 0..problem.n {
         let mut queue = BinaryHeap::new();
 
         // An ordered list for efficient binary search
         // We only need to visit stations above this one,
         // since the time from previous stations to this one
         // has already been calculated
-        let mut stations_unvisited = (station..problem.description.n).collect_vec();
+        let mut stations_unvisited = (station..problem.n).collect_vec();
         // Storing previous states
         let mut prev_states = vec![];
 
@@ -121,7 +122,7 @@ pub fn evaluate(
                 queue.push(QueueNode {
                     station: next_station,
                     train: n.train,
-                    score: n.score + problem.description.track_times[[n.station, next_station]],
+                    score: n.score + problem.track_times[[n.station, next_station]],
                     direction: n.direction,
                     train_schedule_progress: next_station_pos,
                     has_switched: false
@@ -159,5 +160,5 @@ pub fn evaluate(
         }
     }
     // Elementwise multiply with frequencies to get an overall score
-    (station_travel_times * &problem.description.travel_frequencies).sum() / 2.0
+    (station_travel_times * &problem.travel_frequencies).sum() / 2.0
 }
