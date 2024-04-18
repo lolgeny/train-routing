@@ -34,7 +34,9 @@ struct QueueNode {
     pub train_schedule_progress: usize,
     /// Tracks if the node has just switched,
     /// to avoid an infinte loop of switching tracks
-    pub has_switched: bool
+    pub has_switched: bool,
+    /// The total lines travelled so far - max 5
+    pub total_lines: usize
 }
 impl PartialEq for QueueNode {
     fn eq(&self, other: &Self) -> bool {
@@ -91,9 +93,9 @@ pub fn evaluate(
             // UNWRAP: this will never panic: the current station, by use of `filter` above,
             // will always be in this train's route.
             let pos = line.route.iter().position(|x| *x == station).unwrap();
-            queue.push(QueueNode {station, train, score: 0.0, direction: Forward, train_schedule_progress: pos, has_switched: false});
+            queue.push(QueueNode {station, train, score: 0.0, direction: Forward, train_schedule_progress: pos, has_switched: false, total_lines: 1});
             if line.ty == Bidirectional { // could be riding a bidirectional train backwards
-                queue.push(QueueNode {station, train, score: 0.0, direction: Backward, train_schedule_progress: pos, has_switched: false});
+                queue.push(QueueNode {station, train, score: 0.0, direction: Backward, train_schedule_progress: pos, has_switched: false, total_lines: 1});
             }
         }
 
@@ -111,6 +113,8 @@ pub fn evaluate(
                 Err(i) => prev_states.insert(i, (n.station, n.train, n.direction))
             }
 
+            if n.total_lines >= 5 {break};
+
             // A commuter could stay on the same train
             let next_station_pos = match n.direction {
                 Forward => if n.train_schedule_progress + 1 < train_lines[n.train].route.len() {n.train_schedule_progress + 1} else {0},
@@ -125,7 +129,8 @@ pub fn evaluate(
                     score: n.score + problem.track_times[[n.station, next_station]],
                     direction: n.direction,
                     train_schedule_progress: next_station_pos,
-                    has_switched: false
+                    has_switched: false,
+                    total_lines: n.total_lines
                 });
             }
 
@@ -144,7 +149,8 @@ pub fn evaluate(
                     score: n.score + train_delays[a_train],
                     direction: Forward,
                     train_schedule_progress: pos,
-                    has_switched: true
+                    has_switched: true,
+                    total_lines: n.total_lines + 1
                 });
                 if train_lines[a_train].ty == Bidirectional { // riding backwards on a bidirectional train
                     queue.push(QueueNode {
@@ -153,7 +159,8 @@ pub fn evaluate(
                         score: n.score + train_delays[a_train],
                         direction: Backward,
                         train_schedule_progress: pos,
-                        has_switched: true
+                        has_switched: true,
+                        total_lines: n.total_lines + 1
                     });
                 }
             }

@@ -41,11 +41,6 @@ pub struct TrainLine {
     /// The number of trains that use this line
     pub n: usize
 }
-impl Default for TrainLine {
-    fn default() -> Self {
-        Self { route: vec![], ty: ScheduleType::Circular, n: 1 }
-    }
-}
 
 /// The solver's optimal solution to the problem
 #[derive(Debug, Clone, PartialEq)]

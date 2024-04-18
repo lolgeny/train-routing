@@ -4,7 +4,7 @@ use ndarray::{array, ArrayD, IxDyn};
 use parse::{parse_problem, save_problem};
 use problem::Problem;
 
-use crate::{baseline::big_loop, problem::ScheduleType};
+use crate::{baseline::big_loop, localsearch::metaheuristic::{SimAnneal, SimAnnealParams, TabuParams, TabuSearch}, problem::ScheduleType};
 
 mod baseline;
 mod evaluate;
@@ -55,16 +55,29 @@ fn gen_random_problem(n: usize, train_price: f64, total_budget: f64) -> Problem 
 
 fn main() {
     // let problem = parse_problem("test_problem.toml");
-    // let problem = gen_random_problem(100, 1.0, 100.0);
-    // save_problem("large_random_problem.toml", &problem);
-    let problem = parse_problem("medium_random_problem.toml");
-    // dbg!(&problem);
+    // let problem = gen_random_problem(40, 1.0, 100.0);
+    // save_problem("semi_large_random_problem.toml", &problem);
+    let problem = parse_problem("semi_large_random_problem.toml");
 
     let solution = big_loop(&problem, ScheduleType::Bidirectional);
     dbg!(&solution);
     println!("{}", solution.check_feasibility(&problem));
 
-    let solver = localsearch::Solver { problem: &problem, max_iterations: 10_000, neighbour_chance: 0.7, tabu_initial_timeout: 10_000 };
+    let solver2 = localsearch::Solver::<SimAnneal> {
+        problem: &problem, max_iterations: 1000, neighbour_chance: 0.7,
+        mh_params: SimAnnealParams {
+            initial_temp: 540.0,
+            temp_scale: (1.0/540.0f64).powf(1.0/200_000.0),
+        }
+    };
+    let solver = localsearch::Solver::<TabuSearch> {
+        problem: &problem, max_iterations: 1000, neighbour_chance: 0.7,
+        mh_params: TabuParams {
+            initial_timeout: 1000,
+            size_adjust: 10,
+        }
+    };
     let solution2 = solver.solve();
-    dbg!(&solution2);
+    let solution3 = solver2.solve();
+    println!("Tabu: {}, SA: {}", solution2.obj_value, solution3.obj_value);
 }

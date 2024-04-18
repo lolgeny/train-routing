@@ -1,12 +1,13 @@
 //! Implements a local search based algorithm for optimising a train routine.
-//! It uses the ant colony optimisation meaheuristic
 
-use std::{collections::HashMap, vec};
+use std::vec;
 
 use itertools::Itertools;
 use ndarray::ArrayD;
 
 use crate::{baseline, evaluate::evaluate, problem::{Problem, ScheduleType, Solution, TrainLine}};
+
+pub mod metaheuristic;
 
 /// Helper iterator to visit all tracks on a single train line
 struct TrainTrackIterator<'a> {
@@ -40,7 +41,7 @@ impl<'a> Iterator for TrainTrackIterator<'a> {
 
 /// A possible partial solution that is currently being considered
 #[derive(Debug, Clone, PartialEq)]
-struct WorkingSolution {
+pub struct WorkingSolution {
     train_lines: Vec<TrainLine>,
     cost: f64,
     built_tracks: ArrayD<bool>,
@@ -60,11 +61,11 @@ impl WorkingSolution {
 }   
 impl WorkingSolution {
     /// Helper function to evaluate objective
-    fn evaluate(&self, solver: &Solver<'_>) -> f64 {
+    fn evaluate<M: Metaheuristic>(&self, solver: &Solver<'_, M>) -> f64 {
         evaluate(solver.problem, &self.train_lines)
     }
     /// Helper funcction to check cost
-    fn calc_cost(&self, solver: &Solver<'_>) -> f64 {
+    fn calc_cost<M: Metaheuristic>(&self, solver: &Solver<'_, M>) -> f64 {
         let mut cost = self.train_lines.iter().map(|l| l.n as f64).sum::<f64>() * solver.problem.train_price;
         for i in 0..solver.problem.n {
             'tracks: for j in 0..solver.problem.n {
@@ -81,7 +82,7 @@ impl WorkingSolution {
         cost
     }
     /// Explore neighbours to this solution, by possible allowed moves
-    fn generate_neighbours(&self, solver: &Solver<'_>) -> Vec<WorkingSolution> {
+    fn generate_neighbours<M: Metaheuristic>(&self, solver: &Solver<'_, M>) -> Vec<WorkingSolution> {
         let mut neighbours = vec![];
         
         // Clone a line
@@ -254,11 +255,25 @@ impl WorkingSolution {
     }
 }
 
+/// Defines a metaheuristic - an abstraction
+/// for tabu search, simulated annealing, etc.
+pub(crate) trait Metaheuristic {
+    type Params: Clone;
+
+    /// Construct this metaheuristic from parameters
+    fn new(params: Self::Params) -> Self;
+
+    /// Select a neighbouring candidate, returning it and its score; update the metaheuristic with this information
+    fn choose_update(
+        &mut self, candidates: Vec<WorkingSolution>, solver: &Solver<'_, Self>, prev_score: f64, time: usize
+    ) -> Option<(WorkingSolution, f64)> where Self: Sized;
+}
+
 /// Parameters for the solver.
 /// Varying these will change the quality and speed
 /// of the solution.
 #[derive(Debug, Clone)]
-pub struct Solver<'a> {
+pub struct Solver<'a, M: Metaheuristic> {
     /// The actual train problem to solve
     pub problem: &'a Problem,
     /// The max iterations to run the algorithm for,
@@ -266,59 +281,52 @@ pub struct Solver<'a> {
     pub max_iterations: usize,
     /// The probability a neighbour is constructed
     pub neighbour_chance: f64,
-    /// The time before tabu times out
-    pub tabu_initial_timeout: usize
+    /// Metaheuristic params to use for avoiding
+    /// local optima
+    pub mh_params: M::Params
 }
-impl<'a> Solver<'a> {
+impl<'a, M: Metaheuristic> Solver<'a, M> {
     /// Solve the problem
     pub fn solve(&self) -> Solution {
         // Construct a basic feasible solution
         let mut solution = WorkingSolution::new(self.problem);
         let mut best_solution = solution.clone();
         let mut best_score = solution.evaluate(self);
-        let mut tabu = HashMap::new();
-        let mut tabu_timeout = self.tabu_initial_timeout;
         let mut current_score = best_score;
         let mut time = 0;
         let mut stale_time = 0;
         let mut good_solutions: Vec<WorkingSolution> = vec![];
+
+        let mut mh = M::new(self.mh_params.clone());
         for _ in 0..self.max_iterations {
             // Consider possible neighbours to this solution
-            let neighbours = solution.generate_neighbours(self);
-            let allowed_neighbours = neighbours.into_iter().filter(
-                |n| !tabu.contains_key(&n.train_lines) && n.calc_cost(&self) <= self.problem.total_budget
-            ).collect_vec();
-            if allowed_neighbours.is_empty() {continue}; // neighbour_chance is likely too low, or tabu too full
-            // UNWRAP: above statement ensures this never panics
-            let (_, neighbour, score) = allowed_neighbours.into_iter().enumerate().map(|(i, n)| {
-                let score = n.evaluate(self);
-                (i, n, score)
-            })
-                .min_by(|(_, _, score1), (_, _, score2)| score1.total_cmp(score2)).unwrap();
-            // Update current solution + tabu
+            let mut neighbours = solution.generate_neighbours(self);
+            neighbours.retain(|n| n.calc_cost(self) <= self.problem.total_budget);
+            let (neighbour, score) = match mh.choose_update(neighbours, self, current_score, time) {
+                Some(x) => x,
+                None => continue
+            };
+            // Update current solution
             solution = neighbour;
             if score < best_score {
                 best_solution = solution.clone();
                 best_score = score;
             }
-            if current_score <= score { // decrease tabu: selected neighbour is worse
-                if tabu_timeout > 10 && current_score < score {tabu_timeout -= 10;}
+            // check staleness
+            if current_score <= score {
                 stale_time += 1;
-            } else { // increase tabu: getting better
-                tabu_timeout += 10;
+            } else {
                 stale_time = 0;
             }
             current_score = score;
             if stale_time > 20 && !good_solutions.is_empty() { // intensification
                 solution = fastrand::choice(&good_solutions).unwrap().clone(); // UNWRAP: never unwraps since we've checked good solutions
-                current_score = solution.evaluate(&self);
+                current_score = solution.evaluate(self);
                 stale_time = 0;
             }
             if time % 100 == 0 && !good_solutions.contains(&best_solution) {
                 good_solutions.push(best_solution.clone());
             }
-            tabu.retain(|_, v| *v + tabu_timeout >= time);
-            tabu.insert(solution.train_lines.clone(), time);
             time += 1;
         }
         Solution { built_tracks: best_solution.built_tracks, train_lines: best_solution.train_lines, obj_value: best_score }
