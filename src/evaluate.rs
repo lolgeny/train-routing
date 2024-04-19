@@ -1,9 +1,9 @@
 //! Evaluates a solution by simulating flow on it
 
-use std::collections::BinaryHeap;
-
 use itertools::Itertools;
 use ndarray::ArrayD;
+use ordered_float::NotNan;
+use radix_heap::RadixHeapMap;
 
 use crate::problem::{Problem, ScheduleType, TrainLine};
 use ScheduleType::*;
@@ -19,7 +19,7 @@ use TravelDirection::*;
 /// A node used in the priority queue for Dijkstra's algorithm.
 /// It has special comparison operations defined for the `BinaryHeap`
 /// to use correctly.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct QueueNode {
     /// The station that this node is at
     pub station: usize,
@@ -57,6 +57,9 @@ impl Ord for QueueNode {
     }
 }
 
+// Large constant penalty for disconnect between stations
+const DEFAULT_TRAVEL_TIME: f64 = 1e10;
+
 /// Evaluates a solution by simulating flow on it
 /// 
 /// For every station, paths to every other one required are computed via BFS.
@@ -74,12 +77,12 @@ pub fn evaluate(
         total_time / (2.0 * line.n as f64)
     }).collect_vec();
 
-    let mut station_travel_times = ArrayD::<f64>::ones(problem.travel_frequencies.shape()) * 1e10; // TODO: something more robust
+    let mut station_travel_times = ArrayD::<f64>::ones(problem.travel_frequencies.shape()) * DEFAULT_TRAVEL_TIME; // TODO: something more robust
 
     // Iterate over every starting position
+    let mut queue = RadixHeapMap::new();
     for station in 0..problem.n {
-        let mut queue = BinaryHeap::new();
-
+        queue.clear();
         // An ordered list for efficient binary search
         // We only need to visit stations above this one,
         // since the time from previous stations to this one
@@ -93,14 +96,15 @@ pub fn evaluate(
             // UNWRAP: this will never panic: the current station, by use of `filter` above,
             // will always be in this train's route.
             let pos = line.route.iter().position(|x| *x == station).unwrap();
-            queue.push(QueueNode {station, train, score: 0.0, direction: Forward, train_schedule_progress: pos, has_switched: false, total_lines: 1});
+            // UNWRAPS: 0 is not nan
+            queue.push(NotNan::new(0.0).unwrap(), QueueNode {station, train, score: 0.0, direction: Forward, train_schedule_progress: pos, has_switched: false, total_lines: 1});
             if line.ty == Bidirectional { // could be riding a bidirectional train backwards
-                queue.push(QueueNode {station, train, score: 0.0, direction: Backward, train_schedule_progress: pos, has_switched: false, total_lines: 1});
+                queue.push(NotNan::new(0.0).unwrap(), QueueNode {station, train, score: 0.0, direction: Backward, train_schedule_progress: pos, has_switched: false, total_lines: 1});
             }
         }
 
         // Algorithm loop, processing the current shortest node
-        while let Some(n) = queue.pop() {
+        while let Some((_, n)) = queue.pop() {
             if stations_unvisited.is_empty() {break};
             if let Ok(i) = stations_unvisited.binary_search(&n.station) {
                 station_travel_times[[station, n.station]] = n.score;
@@ -113,7 +117,17 @@ pub fn evaluate(
                 Err(i) => prev_states.insert(i, (n.station, n.train, n.direction))
             }
 
-            if n.total_lines >= 5 {break};
+            if n.total_lines >= 3 {break};
+
+            // Check if we have already got from this station to targets - if so, visit it!
+            stations_unvisited = stations_unvisited.into_iter().filter(|u| {
+                if station_travel_times[[n.station, *u]] < DEFAULT_TRAVEL_TIME {
+                    station_travel_times[[station, *u]] = n.score + station_travel_times[[n.station, *u]];
+                    station_travel_times[[*u, station]] = n.score + station_travel_times[[n.station, *u]];
+                    return false;
+                }
+                true
+            }).collect();
 
             // A commuter could stay on the same train
             let next_station_pos = match n.direction {
@@ -123,15 +137,18 @@ pub fn evaluate(
             let next_station = train_lines[n.train].route[next_station_pos];
             // only push this node if this station has not yet been visited
             if stations_unvisited.binary_search(&next_station).is_ok() {
-                queue.push(QueueNode {
-                    station: next_station,
-                    train: n.train,
-                    score: n.score + problem.track_times[[n.station, next_station]],
-                    direction: n.direction,
-                    train_schedule_progress: next_station_pos,
-                    has_switched: false,
-                    total_lines: n.total_lines
-                });
+                let score = n.score + problem.track_times[[n.station, next_station]];
+                if let Ok(nnan) = NotNan::new(-score) {
+                    queue.push(nnan, QueueNode {
+                        station: next_station,
+                        train: n.train,
+                        score,
+                        direction: n.direction,
+                        train_schedule_progress: next_station_pos,
+                        has_switched: false,
+                        total_lines: n.total_lines
+                    });
+                }
             }
 
             // A commuter could also switch trains
@@ -142,26 +159,35 @@ pub fn evaluate(
                 );
             for (a_train, _) in adjacent_trains {
                 // UNWRAP: again, by the filter above, this will never panic since `position` will always find this station.
-                let pos = train_lines[a_train].route.iter().position(|x| *x == n.station).unwrap();
-                queue.push(QueueNode {
-                    station: n.station,
-                    train: a_train,
-                    score: n.score + train_delays[a_train],
-                    direction: Forward,
-                    train_schedule_progress: pos,
-                    has_switched: true,
-                    total_lines: n.total_lines + 1
-                });
-                if train_lines[a_train].ty == Bidirectional { // riding backwards on a bidirectional train
-                    queue.push(QueueNode {
+                let pos = match train_lines[a_train].route.iter().position(|x| *x == n.station) {
+                    Some(x) => x,
+                    None => break // this will never happen
+                };
+                let score = n.score + train_delays[a_train];
+                if let Ok(nnan) = NotNan::new(-score) {
+                    queue.push(nnan, QueueNode {
                         station: n.station,
                         train: a_train,
-                        score: n.score + train_delays[a_train],
-                        direction: Backward,
+                        score,
+                        direction: Forward,
                         train_schedule_progress: pos,
                         has_switched: true,
                         total_lines: n.total_lines + 1
                     });
+                }
+                if train_lines[a_train].ty == Bidirectional { // riding backwards on a bidirectional train
+                    let score = n.score + train_delays[a_train];
+                    if let Ok(nnan) = NotNan::new(-score) {
+                        queue.push(nnan, QueueNode {
+                            station: n.station,
+                            train: a_train,
+                            score,
+                            direction: Backward,
+                            train_schedule_progress: pos,
+                            has_switched: true,
+                            total_lines: n.total_lines + 1
+                        });
+                    }
                 }
             }
         }

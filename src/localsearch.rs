@@ -66,20 +66,22 @@ impl WorkingSolution {
     }
     /// Helper funcction to check cost
     fn calc_cost<M: Metaheuristic>(&self, solver: &Solver<'_, M>) -> f64 {
-        let mut cost = self.train_lines.iter().map(|l| l.n as f64).sum::<f64>() * solver.problem.train_price;
-        for i in 0..solver.problem.n {
-            'tracks: for j in 0..solver.problem.n {
-                for l in &self.train_lines {
-                    for (a, b) in TrainTrackIterator::new(l) {
-                        if (i == a && j == b) || (i == b && j == a) {
-                            cost += solver.problem.track_costs[[i, j]];
-                            continue 'tracks;
-                        }
-                    }
-                }
+        let train_cost = self.train_lines.iter().map(|l| l.n as f64).sum::<f64>() * solver.problem.train_price;
+        (0..solver.problem.n).into_iter().map(|i| {
+            let mut cost = 0.0;
+            /*'tracks:*/ for j in 0..solver.problem.n {
+                if self.built_tracks[[i, j]] {cost += solver.problem.track_costs[[i, j]]};
+                // for l in &self.train_lines {
+                //     for (a, b) in TrainTrackIterator::new(l) {
+                //         if (i == a && j == b) || (i == b && j == a) {
+                //             cost += solver.problem.track_costs[[i, j]];
+                //             continue 'tracks;
+                //         }
+                //     }
+                // }
             }
-        }
-        cost
+            cost
+        }).sum::<f64>() + train_cost
     }
     /// Explore neighbours to this solution, by possible allowed moves
     fn generate_neighbours<M: Metaheuristic>(&self, solver: &Solver<'_, M>) -> Vec<WorkingSolution> {
@@ -301,7 +303,7 @@ impl<'a, M: Metaheuristic> Solver<'a, M> {
         for _ in 0..self.max_iterations {
             // Consider possible neighbours to this solution
             let mut neighbours = solution.generate_neighbours(self);
-            neighbours.retain(|n| n.calc_cost(self) <= self.problem.total_budget);
+            neighbours = neighbours.into_iter().filter(|n| n.calc_cost(self) <= self.problem.total_budget).collect();
             let (neighbour, score) = match mh.choose_update(neighbours, self, current_score, time) {
                 Some(x) => x,
                 None => continue
