@@ -16,6 +16,8 @@ mod localsearch;
 mod parse;
 mod problem;
 
+#[cfg(test)] mod test;
+
 
 /// Tests the `save_problem` function by writing a small example
 /// problem to a file.

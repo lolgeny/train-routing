@@ -1,5 +1,5 @@
 n = 3
-train_price = 1.0
+train_price = 5.0
 total_budget = 30.0
 
 [track_costs]

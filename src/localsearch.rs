@@ -271,9 +271,9 @@ pub(crate) trait Metaheuristic {
     ) -> Option<(WorkingSolution, f64)> where Self: Sized;
 }
 
-/// Parameters for the solver.
-/// Varying these will change the quality and speed
-/// of the solution.
+/// A local search solver: given a problem and parameters,
+/// create a solution in the `solve` method.
+/// It is non-deterministic and immutable.
 #[derive(Debug, Clone)]
 pub struct Solver<'a, M: Metaheuristic> {
     /// The actual train problem to solve

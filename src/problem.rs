@@ -5,7 +5,7 @@ use ndarray::ArrayD;
 use serde::{Deserialize, Serialize};
 
 /// A description of a general train route problem
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct Problem {
     /// The number of stations
     pub n: usize,

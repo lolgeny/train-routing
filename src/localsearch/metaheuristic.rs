@@ -35,6 +35,7 @@ impl Metaheuristic for TabuSearch {
     }
 
     fn choose_update(&mut self, candidates: Vec<WorkingSolution>, solver: &Solver<'_, Self>, prev_score: f64, time: usize) -> Option<(WorkingSolution, f64)> {
+        self.tabu.retain(|_, v| *v + self.tabu_timeout >= time);
         if let Some((solution, score)) = candidates.into_iter().filter(|c| !self.tabu.contains_key(&c.train_lines)).map(|n| {
             let score = n.evaluate(solver);
             (n, score)
@@ -45,11 +46,11 @@ impl Metaheuristic for TabuSearch {
                 } else { // increase tabu: getting better
                     self.tabu_timeout += self.params.size_adjust;
                 }
-                self.tabu.retain(|_, v| *v + self.tabu_timeout >= time);
                 self.tabu.insert(solution.train_lines.clone(), time);
         
                 Some((solution, score))
         } else {
+            self.tabu_timeout -= self.params.size_adjust;
             None
         }
     }

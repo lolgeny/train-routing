@@ -15,7 +15,9 @@ pub fn big_loop(problem: &Problem, ty: ScheduleType) -> Solution {
     for i in 0..problem.n-1 {
         built_tracks[[i, i+1]] = true; built_tracks[[i+1, i]] = true;
     }
-    built_tracks[[0, problem.n-1]] = true; built_tracks[[problem.n-1, 0]] = true;
+    if ty == ScheduleType::Circular {
+        built_tracks[[0, problem.n-1]] = true; built_tracks[[problem.n-1, 0]] = true;
+    }
     let train_lines = vec![TrainLine { route, ty, n: 1 }];
     let obj_value = evaluate(problem, &train_lines);
 
